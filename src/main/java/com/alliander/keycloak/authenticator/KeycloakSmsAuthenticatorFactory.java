@@ -1,5 +1,7 @@
 package com.alliander.keycloak.authenticator;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.authentication.Authenticator;
@@ -11,8 +13,6 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 
 import javax.ws.rs.HttpMethod;
-import java.util.ArrayList;
-import java.util.List;
 
 import static com.alliander.keycloak.authenticator.SMSAuthenticatorContstants.AUTH_METHOD_BASIC;
 import static com.alliander.keycloak.authenticator.SMSAuthenticatorContstants.AUTH_METHOD_INMESSAGE;
@@ -31,7 +31,8 @@ public class KeycloakSmsAuthenticatorFactory implements AuthenticatorFactory, Co
 
     public static final AuthenticationExecutionModel.Requirement[] REQUIREMENT_CHOICES = {
             AuthenticationExecutionModel.Requirement.REQUIRED,
-            AuthenticationExecutionModel.Requirement.OPTIONAL,
+            AuthenticationExecutionModel.Requirement.ALTERNATIVE,
+            AuthenticationExecutionModel.Requirement.CONDITIONAL,
             AuthenticationExecutionModel.Requirement.DISABLED};
 
     private static final List<ProviderConfigProperty> configProperties = new ArrayList<ProviderConfigProperty>();
@@ -79,7 +80,8 @@ public class KeycloakSmsAuthenticatorFactory implements AuthenticatorFactory, Co
         methods.add(HttpMethod.GET);
         methods.add(HttpMethod.POST);
         property.setType(ProviderConfigProperty.LIST_TYPE);
-        property.setDefaultValue(methods);
+        property.setOptions(methods);
+        property.setDefaultValue(HttpMethod.POST);
         configProperties.add(property);
 
         property = new ProviderConfigProperty();
@@ -97,7 +99,8 @@ public class KeycloakSmsAuthenticatorFactory implements AuthenticatorFactory, Co
         types.add("application/json");
         types.add("application/xml");
         property.setType(ProviderConfigProperty.LIST_TYPE);
-        property.setDefaultValue(types);
+        property.setOptions(types);
+        property.setDefaultValue("application/json");
         configProperties.add(property);
 
         // SMS Authentication
@@ -109,7 +112,8 @@ public class KeycloakSmsAuthenticatorFactory implements AuthenticatorFactory, Co
         types.add(AUTH_METHOD_BASIC);
         types.add(AUTH_METHOD_INMESSAGE);
         property.setType(ProviderConfigProperty.LIST_TYPE);
-        property.setDefaultValue(types);
+        property.setOptions(types);
+        property.setDefaultValue(AUTH_METHOD_BASIC);
         configProperties.add(property);
 
         property = new ProviderConfigProperty();

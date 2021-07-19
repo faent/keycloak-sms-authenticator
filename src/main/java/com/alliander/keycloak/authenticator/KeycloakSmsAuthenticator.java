@@ -1,5 +1,11 @@
 package com.alliander.keycloak.authenticator;
 
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.util.Date;
+import java.util.Random;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
 import org.apache.http.StatusLine;
@@ -18,22 +24,16 @@ import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
+import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.AuthenticationExecutionModel;
 import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserCredentialModel;
 import org.keycloak.models.UserModel;
 
 import javax.ws.rs.HttpMethod;
 import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.core.Response;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.util.Date;
-import java.util.Random;
 
 /**
  * Created by joris on 11/11/2016.
@@ -82,16 +82,18 @@ public class KeycloakSmsAuthenticator implements Authenticator {
             String code = getSmsCode(nrOfDigits);
 
             storeSMSCode(context, code, new Date().getTime() + (ttl * 1000)); // s --> ms
-            if (sendSmsCode(mobileNumber, code, context.getAuthenticatorConfig())) {
+          logger.info("Sending " + code + "  to mobileNumber " + mobileNumber);
+
+//          if (sendSmsCode(mobileNumber, code, context.getAuthenticatorConfig())) {
                 Response challenge = context.form().createForm("sms-validation.ftl");
                 context.challenge(challenge);
-            } else {
-                Response challenge =  context.form()
-                        .setError("SMS could not be sent.")
-                        .createForm("sms-validation-error.ftl");
-                context.failureChallenge(AuthenticationFlowError.INTERNAL_ERROR, challenge);
-                return;
-            }
+//            } else {
+//                Response challenge =  context.form()
+//                        .setError("SMS could not be sent.")
+//                        .createForm("sms-validation-error.ftl");
+//                context.failureChallenge(AuthenticationFlowError.INTERNAL_ERROR, challenge);
+//                return;
+//            }
         } else {
             // The mobile number is NOT configured --> complain
             Response challenge =  context.form()
@@ -116,8 +118,7 @@ public class KeycloakSmsAuthenticator implements Authenticator {
                 break;
 
             case INVALID:
-                if(context.getExecution().getRequirement() == AuthenticationExecutionModel.Requirement.OPTIONAL ||
-                        context.getExecution().getRequirement() == AuthenticationExecutionModel.Requirement.ALTERNATIVE) {
+                if(context.getExecution().getRequirement() == AuthenticationExecutionModel.Requirement.ALTERNATIVE) {
                     logger.debug("Calling context.attempted()");
                     context.attempted();
                 } else if(context.getExecution().getRequirement() == AuthenticationExecutionModel.Requirement.REQUIRED) {
@@ -132,6 +133,8 @@ public class KeycloakSmsAuthenticator implements Authenticator {
                 break;
 
             case VALID:
+              logger.info("Setting phone verified...");
+                context.getUser().setSingleAttribute("phoneVerified", "true");
                 context.success();
                 break;
 
@@ -141,14 +144,15 @@ public class KeycloakSmsAuthenticator implements Authenticator {
     // Store the code + expiration time in a UserCredential. Keycloak will persist these in the DB.
     // When the code is validated on another node (in a clustered environment) the other nodes have access to it's values too.
     private void storeSMSCode(AuthenticationFlowContext context, String code, Long expiringAt) {
-        UserCredentialModel credentials = new UserCredentialModel();
+        CredentialModel credentials = new CredentialModel();
         credentials.setType(SMSAuthenticatorContstants.USR_CRED_MDL_SMS_CODE);
         credentials.setValue(code);
-        context.getSession().users().updateCredential(context.getRealm(), context.getUser(), credentials);
+        context.getSession().userCredentialManager().createCredential(
+            context.getRealm(), context.getUser(), credentials);
 
         credentials.setType(SMSAuthenticatorContstants.USR_CRED_MDL_SMS_EXP_TIME);
         credentials.setValue((expiringAt).toString());
-        context.getSession().users().updateCredential(context.getRealm(), context.getUser(), credentials);
+        context.getSession().userCredentialManager().createCredential(context.getRealm(), context.getUser(), credentials);
     }
 
 
@@ -159,16 +163,17 @@ public class KeycloakSmsAuthenticator implements Authenticator {
         MultivaluedMap<String, String> formData = context.getHttpRequest().getDecodedFormParameters();
         String enteredCode = formData.getFirst(SMSAuthenticatorContstants.ANSW_SMS_CODE);
 
-        String expectedCode = SMSAuthenticatorUtil.getCredentialValue(context.getUser(), SMSAuthenticatorContstants.USR_CRED_MDL_SMS_CODE);
-        String expTimeString = SMSAuthenticatorUtil.getCredentialValue(context.getUser(), SMSAuthenticatorContstants.USR_CRED_MDL_SMS_EXP_TIME);
+        String expectedCode = SMSAuthenticatorUtil.getCredentialValue(context,
+                                                                      SMSAuthenticatorContstants.USR_CRED_MDL_SMS_CODE);
+        String expTimeString = SMSAuthenticatorUtil.getCredentialValue(context, SMSAuthenticatorContstants.USR_CRED_MDL_SMS_EXP_TIME);
 
-        logger.debug("Expected code = " + expectedCode + "    entered code = " + enteredCode);
+        logger.info("Expected code = " + expectedCode + "    entered code = " + enteredCode);
 
         if(expectedCode != null) {
             result = enteredCode.equals(expectedCode) ? CODE_STATUS.VALID : CODE_STATUS.INVALID;
             long now = new Date().getTime();
 
-            logger.debug("Valid code expires in " + (Long.parseLong(expTimeString) - now) + " ms");
+            logger.info("Valid code expires in " + (Long.parseLong(expTimeString) - now) + " ms");
             if(result == CODE_STATUS.VALID) {
                 if (Long.parseLong(expTimeString) < now) {
                     logger.debug("Code is expired !!");
@@ -176,7 +181,7 @@ public class KeycloakSmsAuthenticator implements Authenticator {
                 }
             }
         }
-        logger.debug("result : " + result);
+        logger.info("result : " + result);
         return result;
     }
 

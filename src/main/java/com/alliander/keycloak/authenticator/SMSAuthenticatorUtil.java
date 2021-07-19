@@ -1,11 +1,11 @@
 package com.alliander.keycloak.authenticator;
 
+import java.util.Comparator;
 import org.jboss.logging.Logger;
+import org.keycloak.authentication.AuthenticationFlowContext;
+import org.keycloak.credential.CredentialModel;
 import org.keycloak.models.AuthenticatorConfigModel;
-import org.keycloak.models.UserCredentialValueModel;
 import org.keycloak.models.UserModel;
-
-import java.util.List;
 
 /**
  * Created by joris on 18/11/2016.
@@ -15,26 +15,18 @@ public class SMSAuthenticatorUtil {
     private static Logger logger = Logger.getLogger(SMSAuthenticatorUtil.class);
 
     public static String getAttributeValue(UserModel user, String attributeName) {
-        String result = null;
-        List<String> values = user.getAttribute(attributeName);
-        if(values != null && values.size() > 0) {
-            result = values.get(0);
-        }
-
-        return result;
+        return user.getAttributeStream(attributeName).findFirst()
+            .orElse(null);
     }
 
 
-    public static String getCredentialValue(UserModel user, String credentialName) {
-        String result = null;
-        List<UserCredentialValueModel> creds = user.getCredentialsDirectly();
-        for (UserCredentialValueModel cred : creds) {
-            if(cred.getType().equals(credentialName)) {
-                result = cred.getValue();
-            }
-        }
-
-        return result;
+    public static String getCredentialValue(AuthenticationFlowContext context, String credentialName) {
+        return context.getSession().userCredentialManager()
+            .getStoredCredentialsStream(context.getRealm(), context.getUser())
+            .filter(credentialModel -> credentialModel.getType().equals(credentialName))
+            .max(Comparator.comparing(CredentialModel::getCreatedDate))
+        .map(credentialModel -> credentialModel.getValue())
+        .orElse(null);
     }
 
     public static String getConfigString(AuthenticatorConfigModel config, String configName) {
